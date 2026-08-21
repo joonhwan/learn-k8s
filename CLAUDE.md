@@ -52,6 +52,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    필요한 작업은 에이전트가 대신 실행할 수 없습니다. 학습자에게 직접 실행하도록 안내하고,
    그 결과를 받아 다음 단계로 진행하십시오.
 
+5. **`source ~/.bashrc` 를 안내하지 마십시오.** 학습자의 `.bashrc` 에는 starship·zoxide·
+   mise 와 Intelligent Terminal 셸 통합이 들어 있고, 이들이 `PROMPT_COMMAND` 를 관리합니다.
+   이미 초기화된 셸에서 `.bashrc` 를 재실행하면 뒤에 오는 init 이 `PROMPT_COMMAND` 를 덮어써
+   셸 통합 훅(`__it_shellinteg_prompt`)이 밀려나고, **셸은 살아 있는데 터미널이 프롬프트를
+   그리지 않는** 상태가 됩니다(2026-08-21 실제 발생). 셸 설정을 고친 뒤에는 **새 터미널을
+   열도록** 안내하십시오. 그 상태에 빠졌으면 창을 닫거나 `exec bash -l` 로 벗어납니다.
+
 ## 자주 쓰는 명령
 
 모두 WSL 셸에서, 저장소 루트에서 실행합니다.
