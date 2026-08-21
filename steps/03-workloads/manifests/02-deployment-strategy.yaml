@@ -1,0 +1,49 @@
+# 같은 앱을 다른 갱신 전략으로 배포해 차이를 관찰합니다.
+#
+# maxUnavailable: 0 + maxSurge: 1
+#   -> 새 Pod 을 먼저 띄우고 준비된 것을 확인한 뒤에 옛 Pod 을 지웁니다.
+#      갱신 중에도 준비된 Pod 수가 replicas 아래로 내려가지 않습니다.
+#      대가는 자원입니다. 갱신 중 한 순간 Pod 이 replicas + 1 개까지 존재합니다.
+#
+# 여기서 짚어 둘 것이 있습니다. "준비되었다"의 판단 기준은 readinessProbe 입니다.
+# 프로브가 없으면 컨테이너가 시작된 것만으로 준비된 것으로 봅니다. 그래서 이 전략만으로는
+# 무중단이 보장되지 않습니다. 08단계에서 프로브를 붙인 뒤에 진짜 무중단이 됩니다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-strict
+  namespace: learn
+  labels:
+    app: demo-strict
+  annotations:
+    # rollout history 의 CHANGE-CAUSE 에 이 값이 나타납니다.
+    kubernetes.io/change-cause: "무중단 전략 비교용으로 최초 배포"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-strict
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: demo-strict
+    spec:
+      containers:
+        - name: demo
+          image: learn-k8s/demo:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: MESSAGE
+              value: "무중단 전략 실습용"
+            # 시작에 시간이 걸리는 애플리케이션을 재현합니다. 그러면 새 Pod 이
+            # 준비되기까지 걸리는 시간이 눈에 보입니다.
+            - name: READY_AFTER
+              value: "5"

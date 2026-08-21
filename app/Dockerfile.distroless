@@ -1,0 +1,35 @@
+# 실무에서 권장되는 구성입니다. Dockerfile 과 비교하며 읽으십시오.
+#
+# 런타임 베이스가 distroless 입니다. 셸도, 패키지 관리자도, libc 도 없고 바이너리만 있습니다.
+# 그래서 이미지가 아주 작고(수 MB) 공격 표면이 거의 없습니다.
+#
+# 대가가 있습니다. 셸이 없으므로 `kubectl exec -it ... -- sh` 가 동작하지 않습니다.
+# 그래서 학습 초반에는 alpine 기반(Dockerfile)을 쓰고, 09단계에서 이 차이가 진단에 어떤
+# 영향을 주는지, 그리고 임시 디버그 컨테이너(`kubectl debug`)로 어떻게 해결하는지 다룹니다.
+#
+# 빌드:
+#   docker build -f Dockerfile.distroless -t learn-k8s/demo:v1-distroless --build-arg VERSION=v1 .
+
+FROM golang:1-alpine AS build
+
+WORKDIR /src
+COPY go.mod ./
+RUN go mod download
+COPY *.go ./
+
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath \
+      -ldflags="-s -w -X main.version=${VERSION}" \
+      -o /out/demo .
+
+# ---------------------------------------------------------------------------
+
+# nonroot 변종은 UID 65532 로 실행됩니다. 별도로 사용자를 만들 필요가 없습니다.
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=build /out/demo /demo
+
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/demo"]

@@ -1,0 +1,21 @@
+# 일부러 고장 낸 Pod 입니다. 답을 보지 말고 아래 순서로 원인을 찾아보십시오.
+#
+#   1. kubectl get pods -n learn            -> 상태 문자열을 읽는다
+#   2. kubectl describe pod broken -n learn -> 맨 아래 Events 를 읽는다
+#   3. 원인을 문장으로 말해 본다
+#   4. 이 파일을 고쳐서 정상으로 만든다
+#
+# 09단계에서는 이런 진단을 절차로 정리합니다. 지금은 "상태 문자열 -> describe -> Events"
+# 라는 순서 자체를 몸에 붙이는 것이 목적입니다.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken
+  namespace: learn
+  labels:
+    app: broken
+spec:
+  containers:
+    - name: nginx
+      # 이 태그는 존재하지 않습니다.
+      image: nginx:this-tag-does-not-exist

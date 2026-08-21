@@ -1,0 +1,38 @@
+# kind 클러스터 정의
+#
+# 노드 하나하나가 Docker 컨테이너입니다. `docker ps`로 직접 확인할 수 있습니다.
+# 워커를 두 개 둔 이유는 스케줄링·노드 선택·drain 같은 개념을 실제로 관찰하기 위함입니다.
+#
+# 쿠버네티스 버전은 여기에 명시하지 않았으므로, 설치된 kind 버전의 기본 노드 이미지를
+# 사용합니다. 특정 버전으로 고정하려면 각 노드에 image 필드를 추가하십시오.
+#   image: kindest/node:v1.34.0
+#
+# 참고: https://kind.sigs.k8s.io/docs/user/configuration/
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: learn
+
+nodes:
+  - role: control-plane
+    # ingress-nginx의 kind 배포본은 이 레이블이 붙은 노드에만 컨트롤러를 배치합니다.
+    # 05단계에서 사용하며, 미리 붙여 두면 클러스터를 다시 만들지 않아도 됩니다.
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    # 호스트(WSL)의 80·443 포트를 이 노드로 전달합니다. 05단계에서 Ingress에 붙을 때
+    # http://localhost 로 접근할 수 있게 됩니다.
+    # WSL 안에서 80이나 443이 이미 사용 중이면 클러스터 생성이 실패합니다. 그때는
+    # hostPort를 8080·8443으로 바꾸고, 이후 실습에서 주소에 포트를 붙이십시오.
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+
+  - role: worker
+  - role: worker

@@ -1,0 +1,22 @@
+# 빌드 산출물
+/app/demo
+/app/bin/
+
+# 실습 중 만들어지는 임시 파일
+*.tmp
+*.log
+/tmp/
+
+# kubeconfig 는 절대 커밋하지 않습니다. 인증 정보가 들어 있습니다.
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Helm 차트 의존성 (11단계)
+/steps/11-helm/**/charts/
+/steps/11-helm/**/*.tgz
+
+# 편집기
+.vscode/
+.idea/
+*.swp

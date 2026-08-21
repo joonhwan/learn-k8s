@@ -1,0 +1,51 @@
+# 실습 앱을 배포하는 Deployment 입니다. 04단계 이후에도 계속 씁니다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo
+  namespace: learn
+  labels:
+    app: demo
+spec:
+  replicas: 3
+
+  # 이 셀렉터가 "어떤 Pod 이 내 것인가"를 정합니다. 아래 template.metadata.labels 와
+  # 반드시 맞아야 합니다. 어긋나면 API 서버가 거부합니다.
+  # 한 번 만든 뒤에는 바꿀 수 없는 필드이기도 합니다.
+  selector:
+    matchLabels:
+      app: demo
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # 갱신 중 없어도 되는 Pod 수. 1이면 3개 중 2개는 항상 살아 있습니다.
+      maxUnavailable: 1
+      # 원래 개수보다 더 만들어도 되는 Pod 수.
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      containers:
+        - name: demo
+          image: learn-k8s/demo:v1
+
+          # kind load 로 노드에 실어 넣은 이미지를 쓰겠다는 뜻입니다.
+          # 태그가 latest 이면 기본값이 Always 가 되어 레지스트리를 찾으러 갑니다.
+          # 그래서 이 학습에서는 태그를 항상 명시하고 이 정책을 함께 적습니다.
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 8080
+              name: http
+
+          env:
+            - name: MESSAGE
+              value: "03단계에서 배포했습니다"
+
+          # 헬스체크와 자원 제한은 08단계에서 본격적으로 다룹니다. 여기서는 일부러
+          # 넣지 않았습니다. 아직 없는 상태의 문제를 08단계에서 직접 만나 보는 편이
+          # 낫기 때문입니다.

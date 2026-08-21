@@ -1,0 +1,19 @@
+# 가장 단순한 오브젝트로 선언형 적용을 체험하기 위한 ConfigMap 입니다.
+# 내용 자체는 중요하지 않습니다. 같은 파일을 두 번 적용했을 때 무슨 일이 일어나는지,
+# 값을 바꾼 뒤 kubectl diff 가 무엇을 보여 주는지가 이 실습의 목적입니다.
+#
+# ConfigMap 을 애플리케이션에 실제로 주입하는 방법은 06단계에서 다룹니다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello
+  namespace: learn
+data:
+  # 이 값을 바꾼 뒤 아래를 실행해 보십시오.
+  #   kubectl diff -f manifests/02-configmap.yaml
+  #   kubectl apply -f manifests/02-configmap.yaml
+  greeting: "안녕하세요"
+
+  # ConfigMap 은 spec 대신 data 를 씁니다. 모든 오브젝트가 spec 을 갖는 것은 아닙니다.
+  # 확인: kubectl explain configmap
+  note: "이 오브젝트에는 status 가 없습니다. 조정할 현실이 없기 때문입니다."
