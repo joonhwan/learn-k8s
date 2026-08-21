@@ -151,6 +151,17 @@ KUBECTL_VERSION=v1.34.0 KIND_VERSION=v0.30.0 ./scripts/setup-tools.sh
 뒤 `kubectl version`으로 실제 버전을 확인하고, 문서의 설명과 다른 동작이 나오면 버전 차이를
 먼저 의심합니다.
 
+## 클러스터의 수명
+
+노드 컨테이너의 재시작 정책은 `on-failure` 입니다. 그래서 **PC를 껐다 켜면 클러스터가
+자동으로 살아나지 않습니다.** `docker start` 로 되살리기를 권하지 마십시오. Docker 가
+컨테이너 IP 를 시작 순서에 따라 다시 배정하는데, API 서버 인증서와 etcd 는 원래 IP 를
+자기 신원으로 쓰기 때문에 컨트롤 플레인이 다른 주소를 받으면 클러스터가 뜨지 못합니다.
+
+`RECREATE=1 ./scripts/cluster-up.sh` 로 다시 만들도록 안내하십시오. 실습 결과물은
+매니페스트 파일에 있으므로 `kubectl apply -f` 로 복원됩니다. `cluster-up.sh` 는 이 상황을
+감지해 안내하도록 되어 있습니다.
+
 ## 검증 스크립트를 작성할 때
 
 `scripts/lib/verify.sh`의 함수만 사용하고, 의존성은 `bash`·`kubectl`·`jq`로 제한합니다.

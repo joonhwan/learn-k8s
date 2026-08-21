@@ -219,6 +219,42 @@ docker ps          # 노드 컨테이너가 사라진 것을 확인
 
 두 번째 생성은 이미지가 캐시되어 있어 1~2분이면 끝납니다.
 
+### 8. PC를 껐다 켜면 클러스터는 어떻게 되는가
+
+미리 알아 두면 당황하지 않습니다. **자동으로 살아나지 않습니다.**
+
+WSL 을 다시 시작하면 Docker 데몬은 자동으로 뜨지만, 노드 컨테이너는 `Exited` 상태로
+남습니다. 컨테이너의 재시작 정책이 `on-failure` 이기 때문입니다. 직접 확인해 보십시오.
+
+```bash
+docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' learn-control-plane
+```
+
+`always` 나 `unless-stopped` 라면 데몬이 다시 뜰 때 컨테이너도 함께 시작됩니다. 그러나
+`on-failure` 는 "컨테이너 안의 프로세스가 실패로 끝났을 때"만 해당하고, 데몬이 멈춰서
+함께 중단된 경우는 여기에 들지 않습니다.
+
+`docker start` 로 되살릴 수도 있지만 권하지 않습니다. 이유가 있습니다.
+
+```bash
+docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' learn-control-plane
+kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'; echo
+```
+
+API 서버 인증서는 **그 IP 주소에 대해** 발급되어 있고, etcd 도 그 주소를 자기 신원으로
+씁니다. Docker 는 컨테이너 시작 순서에 따라 IP 를 다시 배정하므로, 컨트롤 플레인이 다른
+주소를 받으면 인증서가 맞지 않아 클러스터가 뜨지 못합니다.
+
+그래서 재부팅 뒤에는 이렇게 하십시오.
+
+```bash
+RECREATE=1 ./scripts/cluster-up.sh
+```
+
+**실습 결과물은 잃지 않습니다.** 매니페스트가 파일로 남아 있으므로 `kubectl apply -f` 로
+그대로 복원됩니다. 클러스터를 언제든 버리고 다시 만들 수 있다는 것이 선언형 모델의
+이점입니다. 01단계에서 그 성질을 개념으로 다룹니다.
+
 ---
 
 ## 검증
@@ -241,6 +277,8 @@ docker ps          # 노드 컨테이너가 사라진 것을 확인
 3. `/etc/kubernetes/manifests/`에 있는 정의들은 왜 일반적인 방식이 아니라 정적 Pod으로
    떠야 합니까?
 4. 컨트롤 플레인과 워커 노드는 각각 무엇을 담당합니까?
+5. PC를 재부팅한 뒤 클러스터가 자동으로 살아나지 않는 이유는 무엇입니까? `docker start` 로
+   되살리기를 권하지 않는 이유는 무엇입니까?
 
 ---
 

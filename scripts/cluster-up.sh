@@ -38,11 +38,40 @@ if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
     log "기존 클러스터를 삭제합니다"
     kind delete cluster --name "$CLUSTER_NAME"
   else
-    ok "클러스터 '$CLUSTER_NAME' 이 이미 있습니다."
-    kubectl config use-context "$CONTEXT" >/dev/null
-    kubectl get nodes
-    printf '\n다시 만들려면: RECREATE=1 %s\n' "$0"
-    exit 0
+    # kind 는 노드 컨테이너가 멈춰 있어도 클러스터를 "있다"고 봅니다. 그래서 여기서
+    # 실제로 응답하는지까지 확인해야 합니다. PC 를 껐다 켜면 이 상태가 됩니다.
+    #
+    # 노드 컨테이너의 재시작 정책은 on-failure 이므로, Docker 데몬이 멈춰서 함께 중단된
+    # 경우에는 자동으로 다시 시작되지 않습니다.
+    kubectl config use-context "$CONTEXT" >/dev/null 2>&1 || true
+
+    if kubectl cluster-info >/dev/null 2>&1; then
+      ok "클러스터 '$CLUSTER_NAME' 이 이미 있고 정상 응답합니다."
+      kubectl get nodes
+      printf '\n다시 만들려면: RECREATE=1 %s\n' "$0"
+      exit 0
+    fi
+
+    warn "클러스터 '$CLUSTER_NAME' 은 있지만 API 서버가 응답하지 않습니다."
+    warn "노드 컨테이너 상태:"
+    docker ps -a --filter "name=${CLUSTER_NAME}-" --format '    {{.Names}} | {{.Status}}' || true
+
+    cat <<GUIDE
+
+  PC 를 껐다 켠 뒤라면 이 상태가 정상입니다. 노드 컨테이너는 멈춰 있고,
+  재시작 정책이 on-failure 이므로 자동으로 다시 시작되지 않습니다.
+
+  'docker start' 로 되살릴 수도 있지만 권하지 않습니다. Docker 가 컨테이너 IP 를
+  시작 순서에 따라 다시 배정하는데, API 서버 인증서와 etcd 는 원래 IP 를 자기 신원으로
+  쓰기 때문입니다. 컨트롤 플레인이 다른 주소를 받으면 클러스터가 뜨지 못합니다.
+
+  학습 환경에서는 다시 만드는 편이 확실하고 빠릅니다(노드 이미지는 캐시에 있습니다).
+  실습 결과물은 매니페스트 파일로 남아 있으므로 kubectl apply 로 그대로 복원됩니다.
+
+      RECREATE=1 $0
+
+GUIDE
+    exit 1
   fi
 fi
 
