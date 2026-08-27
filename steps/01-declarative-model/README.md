@@ -82,11 +82,21 @@ status:               # 현재 상태 — 시스템이 쓴다. 사람이 쓰지 
 `-v=8` 을 붙이면 주고받는 HTTP 요청이 다 보입니다.
 
 ```bash
-kubectl -v=8 get nodes 2>&1 | grep -E 'GET|Request Headers|Response Status' | head -20
+kubectl -v=8 get nodes 2>&1 | grep -Ei '"Request"|"Response" status|accept:' | head -10
 ```
 
-`GET https://127.0.0.1:포트/api/v1/nodes?limit=500` 같은 줄이 보일 것입니다. 평범한 REST
+`url="https://127.0.0.1:포트/api/v1/nodes?limit=500"` 같은 줄이 보일 것입니다. 평범한 REST
 호출입니다.
+
+> 로그의 형식은 판올림을 따라 바뀝니다. v1.36 이전에는 `Response Status: 200 OK in 3 ms`
+> 라는 평문이었지만 지금은 `"Response" status="200 OK"` 라는 구조화된 형식입니다. 위
+> grep 이 아무것도 잡지 못하면 패턴을 의심하기 전에 `grep -i response` 로 실제로 무엇이
+> 찍히는지 먼저 보십시오.
+
+응답의 첫머리에서 `"kind":"Table"` 을 확인하십시오. **표를 만드는 주체는 `kubectl` 이
+아니라 API 서버입니다.** 요청 헤더의 `Accept: application/json;as=Table;v=1;g=meta.k8s.io`
+가 그 형식을 달라고 요구한 부분이고, 서버는 열 이름과 각 열의 설명까지 담아서 돌려줍니다.
+`kubectl` 은 받은 표를 화면 폭에 맞춰 늘어놓을 뿐입니다.
 
 이번에는 `kubectl` 없이 같은 정보를 가져와 보십시오.
 

@@ -12,7 +12,7 @@ data:
   # 이 값을 바꾼 뒤 아래를 실행해 보십시오.
   #   kubectl diff -f manifests/02-configmap.yaml
   #   kubectl apply -f manifests/02-configmap.yaml
-  greeting: "안녕하세요"
+  greeting: "안녕하세요."
 
   # ConfigMap 은 spec 대신 data 를 씁니다. 모든 오브젝트가 spec 을 갖는 것은 아닙니다.
   # 확인: kubectl explain configmap
