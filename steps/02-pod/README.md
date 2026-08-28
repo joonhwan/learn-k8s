@@ -296,7 +296,9 @@ kubectl delete -f manifests/ --ignore-not-found
 1. 같은 Pod 안의 두 컨테이너가 같은 포트를 들을 수 없는 이유는 무엇입니까?
 2. `status.phase` 가 `Pending` 인 Pod 을 만났을 때, 다음으로 볼 것은 무엇입니까?
 3. `restartPolicy: Always` 인 Pod 이 있는 노드가 죽으면 어떻게 됩니까? 누가 되살립니까?
-4. Pod 을 직접 만들어 쓰면 안 되는 이유를 두 가지 이상 대십시오.
+4. 이 단계에서 한 것처럼 **`kind: Pod` 매니페스트를 사람이 직접 써서 `apply`** 하는 방식이
+   실무에 맞지 않는 이유를 두 가지 이상 대십시오. (03단계에서는 `kind: Deployment` 를
+   등록하고, Pod 오브젝트는 컨트롤러가 만들게 합니다. "직접"의 반대는 그것입니다.)
 
 ---
 

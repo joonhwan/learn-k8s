@@ -9,7 +9,7 @@
 
 ## 다음에 이어서 할 일
 
-**마지막 작업: 2026-08-27.** 01단계를 검증까지 마쳤습니다. 이제 02단계입니다.
+**마지막 작업: 2026-08-28.** 02단계를 검증까지 마쳤습니다(12/12). 이제 03단계입니다.
 
 ```bash
 # 1. 새 터미널에서
@@ -22,11 +22,25 @@ kubectl get nodes
 # 3. 노드가 보이지 않으면(컨테이너가 Exited 상태) 다시 만듭니다. 1~2분입니다.
 RECREATE=1 ./scripts/cluster-up.sh
 
-# 4. 클러스터를 다시 만들었다면 01단계 결과물을 복원합니다
-kubectl apply -f steps/01-declarative-model/manifests/
+# 4. 클러스터를 다시 만들었다면 이름공간부터 복원합니다.
+#    kubectl get pods -n learn 은 이름공간이 없어도 "No resources found" 를 내므로
+#    존재 확인은 get ns 로 합니다.
+kubectl get ns learn || kubectl apply -f steps/01-declarative-model/manifests/
 
-# 5. 02단계 시작
-cd steps/02-pod && cat README.md
+# 5. 02단계 결과물을 정리합니다 (검증을 이미 통과했습니다)
+kubectl delete -f steps/02-pod/manifests/ --ignore-not-found
+
+# 6. 03단계 시작
+cd steps/03-workloads && cat README.md
+```
+
+**03단계의 이미지 준비:** 호스트 Docker 에는 `learn-k8s/demo:v1`·`:v2` 가 남아 있으므로
+실습 1(`docker build`)은 건너뛰어도 됩니다. 다만 클러스터를 다시 만들었다면 **노드 안에는
+없으므로** 실습 2의 `kind load` 는 반드시 해야 합니다. 확인 방법입니다.
+
+```bash
+docker images | grep demo                              # 호스트에 있는가
+docker exec learn-worker crictl images | grep demo     # 노드 안에 있는가
 ```
 
 ---
@@ -37,7 +51,7 @@ cd steps/02-pod && cat README.md
 |:---:|:---:|------|--------|
 | [x] | 00 | 환경 구성 | 2026-08-24 |
 | [x] | 01 | 선언형 모델과 컨트롤 플레인 | 2026-08-27 |
-| [~] | 02 | Pod | |
+| [x] | 02 | Pod | 2026-08-28 |
 | [ ] | 03 | 워크로드 컨트롤러 | |
 | [ ] | 04 | 서비스와 클러스터 DNS | |
 | [ ] | 05 | Ingress | |
@@ -326,6 +340,136 @@ Error from server (NotFound): namespaces "learn" not found
 `apply` 가 컨테이너를 만들지 않고 etcd 에 글만 적었던 것과 같은 구조다.
 
 이름공간을 지우면 **그 안의 것이 전부 함께 지워진다.** 실무에서 사고가 나는 자리다.
+
+### 02단계 (2026-08-28)
+
+**막혔던 지점 1 — 이름공간이 없는데 `get` 이 조용했다**
+
+`kubectl get pods -n learn` 이 `No resources found in learn namespace` 를 냈길래 이름공간은
+있고 안이 비었다고 판단했는데, `apply` 를 하니 `namespaces "learn" not found` 가 나왔다.
+**이름공간이 아예 없어도 같은 문장이 나온다.** 재부팅으로 클러스터를 다시 만들면서 01단계
+결과물이 사라져 있었던 것이다.
+
+- 교훈: 존재 확인은 `kubectl get ns learn` 으로 한다. 없으면 `NotFound` 로 명확히 실패한다.
+
+**막혔던 지점 2 — `writer` 의 로그가 비어 있었다**
+
+`kubectl logs -c writer` 가 아무것도 내지 않았다. 고장이 아니라 정상이었다. **`logs` 가
+보여 주는 것은 표준 출력과 표준 에러뿐**인데, `writer` 는 `>> /shared/log.txt` 로 파일에만
+쓰기 때문이다. 옆의 `reader` 는 화면으로 내보내므로 보였다.
+
+이 차이가 **로그 수집 사이드카가 존재하는 이유** 그 자체다. 파일에만 쓰는 프로그램은
+쿠버네티스의 로그 경로에 잡히지 않으므로, 옆에 붙은 컨테이너가 읽어서 표준 출력으로
+흘려보낸다. `reader` 가 하던 일이 그것이다. README 를 고쳐 두었다.
+
+**알게 된 것 — IP 는 "공유"되는 것이 아니라 애초에 하나뿐이다**
+
+튜터가 처음에 "pause 컨테이너가 IP 를 두 컨테이너에게 공유해 준다"고 설명했는데 이해되지
+않았다. "공유"라는 말이 *각자 자기 것이 있는데 하나를 같이 쓴다*로 읽히기 때문이다.
+
+실제 구조는 다르다. IP 는 컨테이너가 아니라 **네트워크 인터페이스**에 붙고, 그 인터페이스는
+**네트워크 이름공간**이라는 칸막이 안에 있다. pause 컨테이너가 먼저 만들어져 이름공간을
+열면 CNI 가 거기에 인터페이스와 IP 를 붙이고, 나머지 컨테이너는 자기 이름공간을 만들지 않고
+**그 안으로 들어간다.** 나눠 쓰는 것이 아니라 하나뿐인 것이다.
+
+Docker 로 옮기면 `--network container:이름` 과 같다. 커널이 붙인 이름공간 번호를 비교하면
+셋이 완전히 같게 나온다.
+
+```
+writer   pid=2818  netns=net:[4026532785]
+reader   pid=2850  netns=net:[4026532785]
+pause    pid=2790  netns=net:[4026532785]
+```
+
+PID 가 pause → writer → reader 순인 것도 증거다. **pause 가 먼저 이름공간을 열고 나머지가
+뒤따라 들어갔다.** 그래서 Pod 이 사라지면 이름공간도 사라지고 IP 도 함께 사라진다.
+
+**막혔던 지점 3 — `Pending` 이 57초였는데 Events 는 15초라고 했다**
+
+`init-demo` 를 `-w` 로 지켜보니 `Pending` 이 57초 지속되었다. 그런데 `describe` 의 Events 는
+`Scheduled` 부터 `main` 시작까지 15초로 보였다. 튜터가 Events 를 믿고 "금방 끝났다"고 했으나
+화면 쪽이 맞았다.
+
+**Events 의 첫 줄이 `Scheduled` 이므로, 그 이전 구간은 Events 에 아무 흔적도 남기지
+않는다.** 타임스탬프를 직접 비교해야 보인다.
+
+```
+Pod 생성 03:27:27  →  배정 03:28:24   (57초 공백)
+prepare 시작 03:28:34 → 종료 03:28:39 (sleep 5 그대로)
+main 시작 03:28:40
+```
+
+- 진단 순서: `phase` → `Events` → **타임스탬프**. 해상도를 이 순서로 높인다.
+- 왜 배정에 57초가 걸렸는지는 밝히지 않았다. `FailedScheduling` 이 없었으므로 스케줄러가
+  자리를 못 찾은 것은 아니다.
+
+**알게 된 것 — 화면의 STATUS 는 API 의 phase 가 아니다**
+
+`Init:0/1`·`Completed`·`Error` 는 모두 `status.phase` 에 없는 값이다. STATUS 열은 `kubectl`
+이 phase 와 컨테이너 상태를 조합해 만든 요약이다. 초기화 중인 Pod 의 실제 phase 는
+`Pending` 이고, 계속 재시작하는 Pod 은 화면에 `Error` 가 찍혀도 phase 는 `Running` 이다.
+
+화면의 문자열을 API 필드로 착각하면 09단계에서 검색이 막힌다.
+
+`Init:0/1` 은 "초기화 컨테이너 1개 중 0개가 끝났다"는 뜻이며, 같은 줄의 `READY 0/1` 과 세는
+대상이 다르다(READY 는 주 컨테이너 중 준비된 수).
+
+**알게 된 것 — `restartPolicy` 를 적지 않으면 `Always` 다**
+
+`init-demo` 를 한참 뒤에 보니 `RESTARTS 1` 이었다. 확인해 보니 직전 종료 이유가
+`Completed`, 종료 코드 `0` 이었다. **성공으로 끝났는데도 다시 시작한 것**이다. 그 매니페스트
+에는 `restartPolicy` 가 없고 기본값이 `Always` 이기 때문이다.
+
+같은 화면에 세 정책이 나란히 있었다.
+
+| Pod | restartPolicy | 성공으로 끝났을 때 |
+|---|---|---|
+| `once-never` | `Never` | `Completed` 로 멈춰 남는다 |
+| `init-demo` | 없음 → `Always` | **다시 시작한다** |
+| `once-onfailure` | `OnFailure` | 다시 시작하지 않는다 |
+
+그리고 `once-onfailure` 의 백오프가 실제로 상한 5분에 도달했다(`RESTARTS 13 (5m47s ago)`).
+처음 1초, 다음 20초로 벌어지던 간격이 여기까지 늘어난 것이다.
+
+**실습 7 진단 기록 — `ImagePullBackOff`**
+
+`describe` 의 Events 를 보고 `nginx:this-tag-does-not-exist` 를 찾아 태그를 고쳤다. 어느
+사건까지 성공했는지(`Scheduled`) 어디에서 멈췄는지(`Pulling`)를 보면 원인의 위치가 이미
+좁혀진다.
+
+고친 뒤 `configured` 가 떴는데도 **4분 15초가 지나서야** `Running` 이 되었다. kubelet 이
+이미 늘려 놓은 재시도 간격은 파일을 고쳐도 줄어들지 않는다. 지우고 다시 만드니 9초 만에
+끝났다.
+
+`nginx:latest` 로 고쳤는데 실무에서는 피해야 한다. 가리키는 대상이 언제든 바뀌어 재현성이
+깨지고, `imagePullPolicy` 의 기본값까지 `Always` 로 달라진다(다른 태그는 `IfNotPresent`).
+버전을 고정하거나 다이제스트로 못 박는다.
+
+**틀렸던 확인 질문 — 노드가 죽으면 누가 되살리는가**
+
+"각 노드의 kubelet"이라고 답했으나 **아무도 되살리지 않는다.** 노드가 죽으면 그 위의
+kubelet 도 함께 죽고, 다른 노드의 kubelet 은 자기 노드에 배정된 Pod 만 본다.
+
+`restartPolicy` 는 **컨테이너가 죽었을 때**를 다루지 **노드가 죽었을 때**를 다루지 않는다.
+층이 다르다. 이 빈틈이 03단계 컨트롤러가 필요한 이유다.
+
+**확인 질문 4번의 표현이 모호했다**
+
+"Pod 을 직접 만들어 쓰면 안 되는 이유"에서 "직접"이 무엇의 반대인지 알 수 없었다. **`kind:
+Pod` 을 사람이 써서 `apply` 하는 것**이 "직접"이고, 그 반대는 **`kind: Deployment` 를
+등록하고 Pod 오브젝트는 컨트롤러가 만들게 하는 것**이다. 질문을 고쳐 두었다.
+
+달라지는 것은 흐름의 맨 앞 한 칸뿐이다. 그 한 칸이 바뀌면 **Pod 을 계속 지켜보는 존재가
+생긴다.**
+
+**이 단계에서 문서에 반영한 것**
+
+- `steps/02-pod/TUTOR-NOTES.md` 신설. 튜터가 잘못 설명했던 지점을 단계 폴더에 남기고, 다음
+  학습 때 반드시 읽도록 `CLAUDE.md` 규약에 넣었다. 이 과정을 여러 번 반복할 것이므로.
+- `CLAUDE.md` 행동 규약 7~10번 추가: 명령보다 목적을 먼저, 옵션은 매번 설명, `TUTOR-NOTES`
+  선행 읽기, 학습자 화면과 튜터 판단이 어긋나면 학습자를 먼저 믿기.
+- `steps/01-declarative-model/README.md` 에 "노드 위의 kubelet" 절 추가. 02단계에서
+  kubelet 이 무엇인지 물었는데 정체를 설명하는 자리가 어디에도 없었다.
 
 ---
 
