@@ -130,8 +130,20 @@ kubectl logs sidecar-demo -n learn -c writer --tail=5
 kubectl logs sidecar-demo -n learn -c reader --tail=5
 ```
 
-`writer`가 공유 볼륨에 쓴 내용을 `reader`가 읽고 있습니다. 두 컨테이너가 같은 파일시스템
-일부를 보고 있다는 증거입니다.
+`writer`의 로그는 **비어 있는 것이 정상입니다.** `kubectl logs`가 보여 주는 것은 컨테이너의
+표준 출력과 표준 에러뿐인데, `writer`는 `>> /shared/log.txt`로 방향을 돌려 **파일에만**
+쓰기 때문입니다. 반면 `reader`는 화면으로 출력하므로 보입니다.
+
+이 차이가 개념 설명에서 말한 **로그 수집 사이드카가 존재하는 이유**입니다. 파일에만 쓰는
+프로그램은 쿠버네티스의 로그 경로에 잡히지 않으므로, 옆에 붙은 컨테이너가 그 파일을 읽어
+표준 출력으로 흘려보내 줍니다. `reader`가 지금 하는 일이 그것입니다.
+
+파일을 직접 비교하면 공유가 확인됩니다. 컨테이너 이름만 다르고 경로는 같습니다.
+
+```bash
+kubectl exec -n learn sidecar-demo -c writer -- tail -3 /shared/log.txt
+kubectl exec -n learn sidecar-demo -c reader  -- tail -3 /shared/log.txt
+```
 
 이제 네트워크 공유를 확인하십시오.
 
