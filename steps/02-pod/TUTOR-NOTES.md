@@ -107,3 +107,21 @@ kubectl get pod init-demo -n learn \
 |---|---|---|
 | `logs -c prepare` | 남아 있는 기록 | 된다 |
 | `exec -c prepare` | 살아 있는 프로세스 | 안 된다 (`container not found`) |
+
+---
+
+## 6. 실습 7에서 고친 매니페스트를 커밋하지 말 것 (2026-08-28)
+
+`manifests/05-pod-broken.yaml` 은 **일부러 고장 내 둔 파일**이다(`nginx:this-tag-does-not-
+exist`). 학습자가 실습 7에서 이 파일을 고쳐 정상으로 만드는데, 그 상태를 커밋하면 다음
+학습에서 실습 7이 성립하지 않는다.
+
+**실제로 한 번 커밋했다가 되돌렸다.** 원인은 단계를 마무리하며 `git add -A` 를 쓴 것이다.
+
+**다음에 할 일:** 단계 마무리 커밋에서는 `git status` 를 먼저 읽고, `manifests/` 아래에
+학습자가 실습 중에 고친 파일이 섞여 있는지 확인한다. 섞여 있으면 되돌린다.
+
+```bash
+git show <원본이 있는 커밋>:steps/02-pod/manifests/05-pod-broken.yaml \
+  > steps/02-pod/manifests/05-pod-broken.yaml
+```
