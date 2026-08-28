@@ -202,6 +202,22 @@ kubectl describe pod once-onfailure -n learn | grep -A5 'Last State'
 여기서 재시작하는 주체는 그 노드의 kubelet 이고, Pod 을 **같은 노드에서** 다시 시작합니다.
 노드 자체가 죽으면 아무도 살려 주지 않습니다.
 
+kubelet 이 무엇인지 흐릿하다면 여기서 한 번 정리하고 넘어가십시오. 이 단계에서 kubelet 이
+등장하는 자리가 세 곳입니다.
+
+| 어디에서 | 무엇을 했는가 |
+|---|---|
+| `describe`의 Events (실습 1) | `Scheduled` 아랫줄부터는 전부 kubelet 이 남긴 기록이다 |
+| `RESTARTS` 값 (이 실습) | 컨테이너를 다시 시작하고 그 횟수를 보고한 것이 kubelet 이다 |
+| `CrashLoopBackOff` (이 실습) | 재시작 간격을 늘리며 기다리는 것도 kubelet 이다 |
+
+**kubelet 은 노드마다 하나씩 상주하며, 그 노드에서 컨테이너를 실제로 띄우는 유일한
+주체**입니다. 정체와 확인 방법은 `steps/01-declarative-model/README.md`의 "노드 위의
+kubelet" 절에 있습니다.
+
+지금 기억할 것은 한계 하나입니다. **kubelet 은 자기 노드 안의 일만 압니다.** 그래서
+`restartPolicy`가 다루는 범위도 그 노드 안으로 끝납니다. 다음 실습이 그 바깥을 봅니다.
+
 ### 6. 결정적인 실험 — Pod 을 지우면
 
 ```bash

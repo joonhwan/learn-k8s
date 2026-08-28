@@ -39,6 +39,48 @@ kubelet ─┘
 이 구조가 뜻하는 바가 있습니다. **`kubectl`은 특별한 도구가 아닙니다.** REST API 를
 호출하는 클라이언트일 뿐입니다. 이 단계에서 그것을 직접 확인합니다.
 
+### 노드 위의 kubelet
+
+위 그림에서 kubelet 만 성격이 다릅니다. `kubectl`은 사람이 명령을 칠 때만 잠깐 실행되고,
+컨트롤러는 컨트롤 플레인에서 돕니다. 그런데 **kubelet 은 노드마다 하나씩 상주하며, 그
+노드에서 컨테이너를 실제로 띄우는 유일한 주체**입니다.
+
+| | 무엇인가 | 어디에서 도는가 | 언제 도는가 |
+|---|---|---|---|
+| `kubectl` | 사람이 쓰는 명령줄 도구 | 학습자의 셸 | 명령을 칠 때만 |
+| `kubelet` | 노드에 상주하는 프로그램 | 각 노드 안 | 노드가 살아 있는 내내 |
+
+이름이 비슷하지만 하는 일은 정반대입니다. `kubectl`은 **요청을 보내는** 쪽이고, kubelet 은
+**요청받은 것을 실행하는** 쪽입니다.
+
+kubelet 이 하는 일은 네 가지입니다.
+
+1. API 서버를 지켜보다가 **자기 노드에 배정된** Pod 을 발견한다
+2. 컨테이너 런타임(containerd)에게 시켜 컨테이너를 띄운다
+3. 실제 상태를 API 서버에 보고한다 (`kubectl get pods`의 `READY`·`RESTARTS` 값이 여기서 온다)
+4. 컨테이너가 끝나면 `restartPolicy`에 따라 다시 시작할지 정한다 (02단계에서 확인합니다)
+
+**kubelet 은 Pod 이 아닙니다.** API 서버·스케줄러·etcd 는 모두 Pod 으로 도는데(00단계의
+정적 Pod), kubelet 만은 노드의 운영체제 위에서 직접 도는 일반 프로세스입니다. 그럴 수밖에
+없습니다. Pod 을 띄우는 것이 kubelet 인데 자기 자신이 Pod 이라면 누가 자기를 띄우겠습니까.
+**순환을 끊는 자리**가 여기입니다.
+
+눈으로 확인하십시오.
+
+```bash
+# 노드 안의 프로세스로 돌고 있다
+docker exec learn-worker systemctl is-active kubelet
+docker exec learn-worker ps -eo pid,comm | grep kubelet
+
+# 그런데 Pod 목록에는 없다
+kubectl get pods -n kube-system -o custom-columns=NAME:.metadata.name --no-headers | sort
+```
+
+마지막으로 한계를 기억해 두십시오. **kubelet 은 자기 노드 안의 일만 압니다.** 다른 노드에
+무엇이 도는지 모릅니다. 그래서 컨테이너가 죽으면 같은 노드에서 다시 띄우지만, **노드 자체가
+죽으면 그 위의 kubelet 도 함께 죽었으므로 아무 일도 일어나지 않습니다.** 이 빈틈을 메우는
+것이 03단계의 컨트롤러입니다.
+
 ### 오브젝트의 네 부분
 
 모든 오브젝트는 같은 골격을 갖습니다.
