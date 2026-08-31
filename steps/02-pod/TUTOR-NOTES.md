@@ -82,6 +82,22 @@ kubectl get pod init-demo -n learn \
 **다음에 할 일:** 학습자가 화면에서 본 시간과 Events 가 어긋나면 **학습자 쪽을 먼저 믿고**
 타임스탬프를 확인한다. 이 관찰은 09단계 진단으로 그대로 이어지므로 눌러 두지 말고 짚는다.
 
+### 덧붙임 — `--sort-by=.lastTimestamp` 로는 시간순 정렬이 안 된다 (2026-08-28, 03단계에서 확인)
+
+`Scheduled` 는 스케줄러가 **새 이벤트 API(`events.k8s.io/v1`)** 로 기록해서
+`lastTimestamp` 가 비어 있고 시각이 `eventTime` 에 들어간다. kubelet 과
+replicaset-controller 는 구 API 를 쓰므로 `lastTimestamp` 가 있다. 그래서
+`--sort-by=.lastTimestamp` 를 붙이면 **`Scheduled` 사건들만 기준 없이 앞으로 밀린다.**
+
+정렬했다고 믿는 화면에서 배정 시각이 엉뚱한 자리에 놓이므로, 위 3번 항목보다 더 눈에
+띄지 않는다. 대신 이것을 쓴다.
+
+```bash
+kubectl get events -n learn --sort-by=.metadata.creationTimestamp
+```
+
+`metadata.creationTimestamp` 는 어느 API 로 기록되었든 모든 오브젝트가 갖는다.
+
 ---
 
 ## 4. `Init:0/1` 은 phase 가 아니다 (2026-08-28)

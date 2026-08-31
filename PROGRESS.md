@@ -9,39 +9,42 @@
 
 ## 다음에 이어서 할 일
 
-**마지막 작업: 2026-08-28.** 02단계를 검증까지 마쳤습니다(12/12). 이제 03단계입니다.
+**마지막 작업: 2026-08-31.** 03단계를 검증까지 마쳤습니다(14/14). 이제 04단계입니다.
+`demo` Deployment 는 04단계에서 계속 쓰므로 **지우지 마십시오.**
 
 ```bash
 # 1. 새 터미널에서
 wsl
 cd /mnt/d/workspace/prj/oss/mine/learn-k8s
 
-# 2. 클러스터가 살아 있는지 먼저 확인합니다
+# 2. 클러스터가 살아 있는지 확인합니다
 kubectl get nodes
 
-# 3. 노드가 보이지 않으면(컨테이너가 Exited 상태) 다시 만듭니다. 1~2분입니다.
+# 3. 노드가 보이지 않으면 다시 만듭니다. 1~2분입니다.
 RECREATE=1 ./scripts/cluster-up.sh
 
-# 4. 클러스터를 다시 만들었다면 이름공간부터 복원합니다.
-#    kubectl get pods -n learn 은 이름공간이 없어도 "No resources found" 를 내므로
-#    존재 확인은 get ns 로 합니다.
+# 4. 다시 만들었다면 01~03단계 결과물을 복원합니다.
+#    이름공간 존재 확인은 get ns 로 합니다 (get pods 는 없어도 조용합니다).
 kubectl get ns learn || kubectl apply -f steps/01-declarative-model/manifests/
+kind load docker-image learn-k8s/demo:v1 --name learn
+kind load docker-image learn-k8s/demo:v2 --name learn
+kubectl apply -f steps/03-workloads/manifests/01-deployment.yaml
 
-# 5. 02단계 결과물을 정리합니다 (검증을 이미 통과했습니다)
-kubectl delete -f steps/02-pod/manifests/ --ignore-not-found
-
-# 6. 03단계 시작
-cd steps/03-workloads && cat README.md
+# 5. 04단계 시작 (문서가 아직 스텁이므로 함께 작성하며 진행합니다)
+cd steps/04-service-dns && cat README.md
 ```
 
-**03단계의 이미지 준비:** 호스트 Docker 에는 `learn-k8s/demo:v1`·`:v2` 가 남아 있으므로
-실습 1(`docker build`)은 건너뛰어도 됩니다. 다만 클러스터를 다시 만들었다면 **노드 안에는
-없으므로** 실습 2의 `kind load` 는 반드시 해야 합니다. 확인 방법입니다.
+**04단계에서 갚아야 할 빚이 두 개 있습니다.**
 
-```bash
-docker images | grep demo                              # 호스트에 있는가
-docker exec learn-worker crictl images | grep demo     # 노드 안에 있는가
-```
+- 03단계에서 롤링 업데이트 중에 서비스가 정말 끊기지 않는지 확인하지 못했습니다.
+  트래픽을 보낼 안정된 주소가 없었기 때문입니다. Service 를 붙인 뒤 갱신하면서 응답이
+  끊기는지 실제로 측정합니다.
+- 02단계에서 Pod 을 다시 만들면 IP 가 바뀌는 것을 확인했습니다. 03단계에서도 Pod 을
+  지울 때마다 IP 가 새로 붙었습니다. 그 문제의 해답이 04단계에 있습니다.
+
+**환경 주의:** `kube-scheduler` 와 `kube-controller-manager` 가 여전히
+`CrashLoopBackOff` 입니다. 원인은 디스크이며 실습 실패가 아닙니다. 아래 "디스크가
+HDD 다" 절과 `CLAUDE.md` 실행 환경 6번을 읽으십시오.
 
 ---
 
@@ -52,7 +55,7 @@ docker exec learn-worker crictl images | grep demo     # 노드 안에 있는가
 | [x] | 00 | 환경 구성 | 2026-08-24 |
 | [x] | 01 | 선언형 모델과 컨트롤 플레인 | 2026-08-27 |
 | [x] | 02 | Pod | 2026-08-28 |
-| [ ] | 03 | 워크로드 컨트롤러 | |
+| [x] | 03 | 워크로드 컨트롤러 | 2026-08-31 |
 | [ ] | 04 | 서비스와 클러스터 DNS | |
 | [ ] | 05 | Ingress | |
 | [ ] | 06 | 설정과 비밀값 | |
@@ -80,6 +83,24 @@ k9s, jq:    설치됨
 
 같은 버전에서 00~03단계 문서와 검증 스크립트가 실제로 통과함을 확인했습니다
 (각 15·8·12·14개 항목).
+
+### 디스크가 HDD 다 (2026-08-28 확인)
+
+WSL 배포판이 `D:\workspace\wsl\Ubuntu24\ext4.vhdx` 에 있고 D: 는 회전 디스크
+(Seagate ST2000DM008)다. 측정값이다.
+
+| 쓰기 방식 | 속도 | 비고 |
+|---|---|---|
+| 순차 쓰기(캐시 허용) | 534 MB/s | 디스크가 느려 보이지 않는다 |
+| `fsync` 강제 쓰기 | 16.6 kB/s (한 번에 246ms) | 캐시를 우회하면 드러난다 |
+
+etcd 는 모든 쓰기에 `fsync` 를 요구하므로 `kube-scheduler` 와
+`kube-controller-manager` 가 리더 임차를 갱신하지 못하고 `CrashLoopBackOff` 에 빠져
+있다. 03단계 진입 시점에 재시작 179회·173회였다. 자세한 내용과 진단 명령은
+`CLAUDE.md` 의 실행 환경 6번에 적어 두었다.
+
+근본 해결은 WSL 을 SSD 로 옮기는 것이나, C: 여유가 120GB 인데 vhdx 가 95GB 여서 지금은
+어렵다. **그대로 진행하기로 결정했다.**
 
 ### 캐시된 것 (다시 받지 않아도 됩니다)
 
@@ -470,6 +491,317 @@ Pod` 을 사람이 써서 `apply` 하는 것**이 "직접"이고, 그 반대는 
   선행 읽기, 학습자 화면과 튜터 판단이 어긋나면 학습자를 먼저 믿기.
 - `steps/01-declarative-model/README.md` 에 "노드 위의 kubelet" 절 추가. 02단계에서
   kubelet 이 무엇인지 물었는데 정체를 설명하는 자리가 어디에도 없었다.
+
+### 03단계 (2026-08-28 시작 ~ 2026-08-31 완료)
+
+**막혔던 지점 1 — Pod 세 개가 Pending 에서 3분 넘게 멈췄다. 원인은 실습이 아니라 디스크였다**
+
+`kubectl apply` 로 Deployment 를 만들었는데 Pod 이 셋 다 `Pending` 이고 `NODE` 가
+`<none>` 이었다. `FailedScheduling` 이벤트는 없었다. 02단계에서 밝히지 못했던 "57초
+지연"과 같은 현상이며, 이번에 끝까지 파고들어 원인을 찾았다.
+
+```
+D: 드라이브가 HDD (Seagate ST2000DM008)
+  └ WSL 배포판이 그 위에 있다 (D:\workspace\wsl\Ubuntu24\ext4.vhdx)
+      └ fsync 한 번에 246ms (순차 쓰기는 534 MB/s 로 멀쩡하다)
+          └ etcd 의 WAL 쓰기가 매번 그만큼 지연된다
+              └ API 서버가 5초 타임아웃 안에 응답하지 못한다
+                  └ 스케줄러가 리더 임차를 갱신하지 못하고 스스로 종료한다
+                      └ CrashLoopBackOff (재시작 179회)
+                          └ 아무도 배정하지 않으므로 Pending 에 머문다
+```
+
+진단의 순서가 그대로 교훈이다. **`Pending` 을 보면 `FailedScheduling` 이 있는지부터
+본다.** 없다면 스케줄러가 자리를 못 찾은 것이 아니라 **아무도 찾고 있지 않은 것**이므로,
+`kube-system` 의 컨트롤 플레인 구성 요소를 봐야 한다.
+
+```bash
+kubectl get pods -n kube-system | grep -E 'scheduler|controller-manager'
+kubectl logs -n kube-system kube-scheduler-learn-control-plane --previous --tail=5
+```
+
+로그의 마지막 세 줄이 전부였다.
+
+```
+Failed to update lease ... context deadline exceeded
+Failed to renew lease
+Leaderelection lost
+```
+
+**스케줄러가 고장 난 것이 아니라 API 서버가 느려서 스스로 물러난 것이다.** 이 구분이
+중요하다. 증상이 나타난 곳과 원인이 있는 곳이 다르다. `kube-controller-manager` 도 재시작
+173회로 같은 이유였다.
+
+etcd DB 는 3.2MB, 메모리는 15GB 중 12GB 유휴, CPU 부하는 0.7 이었다. **자원이 모자라서가
+아니다.** 측정으로 확정했다.
+
+```bash
+dd if=/dev/zero of=/tmp/probe bs=4k count=500 oflag=dsync   # 16.6 kB/s (246ms/회)
+dd if=/dev/zero of=/tmp/probe bs=1M count=200               # 534 MB/s
+```
+
+근본 해결은 WSL 을 SSD 로 옮기는 것이나, C: 여유 120GB 에 vhdx 가 95GB 라 지금은 어렵다.
+**그대로 진행하기로 결정했다.**
+
+**알게 된 것 — `kind load` 는 레지스트리를 건너뛰는 지름길이다**
+
+실무에서는 kind 를 쓰지 않으므로, `kind load` 에 해당하는 일이 무엇인지 사내 프로젝트
+(`D:\workspace\prj\work\dms\Setup`)를 열어 대조했다. 한 줄이 세 조각으로 나뉜다.
+
+| 조각 | 학습(kind) | DMS |
+|---|---|---|
+| 이미지를 둘 곳 | 필요 없음 | 컨트롤 노드에 레지스트리 컨테이너를 띄운다 |
+| 이미지를 올린다 | `kind load` | `podman build → tag → push registry.internal:7000/...` |
+| 노드가 받아 온다 | 필요 없음 | 각 노드 containerd 에 `certs.d/.../hosts.toml` 등록 |
+
+**이미지 이름의 맨 앞이 곧 레지스트리 주소다.** 우리 실습에서 노드 안 이름이
+`docker.io/learn-k8s/demo` 로 보인 것은, 주소를 적지 않으면 containerd 가 `docker.io/` 를
+채워 넣기 때문이다. 실제로 그 주소에는 없으므로 `imagePullPolicy: IfNotPresent` 가 없으면
+받으러 갔다가 실패한다.
+
+DMS 는 폐쇄망이라 **pause 이미지까지** 사내 레지스트리로 바꿔 두었다(`sandbox_image`).
+02단계에서 만난 그 pause 다. 이 한 줄을 빠뜨리면 모든 Pod 이 뜨지 못한다.
+
+**알게 된 것 — `kind load` 로 넣은 이미지는 ID 가 호스트와 다르다**
+
+호스트는 `28875d58...`, 노드 안은 `2f977b14...` 였다. `kind load` 가 tar 로 내보낸 뒤
+containerd 로 불러들이면서 이미지 설정의 표현이 바뀌었기 때문이다. 노드 쪽 repoDigest 가
+`docker.io/library/import-2026-08-28@sha256:...` 인 것이 증거다.
+
+- **호스트의 이미지 ID 로 노드의 이미지를 찾으면 못 찾는다.** 이름과 태그로 대조한다.
+- `import-...` 는 레지스트리에서 온 다이제스트가 아니므로, `image: repo@sha256:...` 로
+  못 박는 실습은 kind 에서 할 수 없다.
+
+**알게 된 것 — `Pending` 은 서로 다른 두 상황을 한 이름으로 부른다**
+
+`scale` 로 늘렸을 때 이런 두 줄이 연달아 나왔다.
+
+```
+demo-...-8mv9g   0/1   Pending   7s   <none>   <none>         <- 배정 전
+demo-...-8mv9g   0/1   Pending   9s   <none>   learn-worker   <- 배정 후에도 Pending
+```
+
+`status.phase` 가 `Pending` 이라는 것은 **"컨테이너가 하나도 실행되지 않았다"**는 뜻이지
+"배정되지 않았다"는 뜻이 아니다. 그래서 진단이 갈린다.
+
+| `Pending` 인데 `NODE` 가 | 문제가 있는 곳 |
+|---|---|
+| `<none>` | 스케줄러 (자리가 없거나, 스케줄러가 죽었거나) |
+| 노드 이름이 있음 | 그 노드의 kubelet (이미지·볼륨·런타임) |
+
+**`-o wide` 로 `NODE` 열을 함께 보는 습관이 필요하다.** 02단계의 "STATUS 는 phase 가
+아니다"에 이어, 이번에는 같은 phase 안에 두 상황이 들어 있다는 것을 보았다.
+
+**알게 된 것 — ReplicaSet 이 줄일 때 어느 Pod 을 지울지 규칙이 있다**
+
+`scale` 로 5개로 늘렸다가 `apply` 로 3개로 되돌리니, 방금 만든 두 개가 지워지고 원래 있던
+것이 남았다. 우연이 아니라 정해진 순서다.
+
+1. `Pending` 이거나 배정되지 못한 Pod 을 먼저
+2. `controller.kubernetes.io/pod-deletion-cost` 주석 값이 낮은 것을 먼저
+3. **복제본이 많이 몰린 노드**의 Pod 을 먼저
+4. **더 최근에 만들어진** Pod 을 먼저
+
+오래 살아남은 Pod 은 이미 트래픽을 받아 왔으므로 더 믿을 만하다. 2번은 사람이 개입하는
+통로다.
+
+**알게 된 것 — Pod 이름은 세 토막이고 각 토막의 주인이 다르다**
+
+```
+demo - bcb9d6678 - x9jd8
+ │        │           └── API 서버가 붙인 임의 5자 (generateName 방식)
+ │        └────────────── 파드 템플릿의 해시
+ └─────────────────────── Deployment 이름 (사람이 지었다)
+```
+
+**가운데 해시가 "어느 버전인가"다.** `spec.template` 을 해시한 값이라, 이미지를 바꾸면
+값이 달라지고 그래서 새 ReplicaSet 이 생긴다. 실습 4(Pod 삭제)에서는 가운데가 유지되고
+실습 6(이미지 변경)에서는 바뀐 것이 이 차이다.
+
+이름을 사람이 직접 지을 수도 있다(02단계의 `web`). 다만 같은 이름이 이미 있으면 거부되므로
+복제에 쓸 수 없다. StatefulSet 만 임의 문자열 대신 순번(`redis-0`)을 쓰는데, 각 복제본이
+고유한 저장소를 가져야 하기 때문이다(07단계).
+
+**막혔던 지점 2 — `--sort-by=.lastTimestamp` 로는 이벤트가 시간순으로 정렬되지 않는다**
+
+정렬했는데도 `Scheduled` 사건들만 시각이 뒤섞인 채 맨 앞에 몰려 있었다. 확인해 보니
+**스케줄러만 새 이벤트 API(`events.k8s.io/v1`)를 써서 `lastTimestamp` 가 비어 있었다.**
+kubelet 과 replicaset-controller 는 구 API 를 쓰므로 값이 있다. 정렬 기준이 없는 항목이
+앞으로 밀린 것이다.
+
+```bash
+kubectl get events -n learn --sort-by=.metadata.creationTimestamp   # 이것을 쓴다
+```
+
+02단계에서 "Events 만 보고 시간을 판단하지 말 것"을 배웠는데, 이번 것은 더 위험하다.
+**정렬했다고 믿는 화면에서 하필 배정 시각만 엉뚱한 자리에 있기 때문이다.**
+
+**알게 된 것 — 이벤트는 1시간만 남는다**
+
+실습 도중 앞선 이벤트들이 통째로 사라졌다. API 서버가 기본 1시간만 보관하고 지운다.
+**"Events 에 아무것도 없다"가 "아무 일도 없었다"를 뜻하지 않는다.** 어젯밤에 죽은 Pod 을
+아침에 조사하면 사건은 이미 없다. 실무에서 로그를 클러스터 밖으로 모으는 이유다.
+
+**막혔던 지점 3 — `maxUnavailable` 을 반대로 이해했다**
+
+실습 9에서 "`maxUnavailable` 이 0이므로 없어도 되는 Pod 수가 무한대"라고 판단했다. 두 가지가
+틀렸다.
+
+- 이 필드는 **상한**이다. 0이면 "없어도 되는 개수가 0", 즉 **가장 엄격한** 값이다.
+- 그리고 `demo` 의 값은 0이 아니라 **1**이다. 0은 `02-deployment-strategy.yaml` 의
+  `demo-strict` 쪽이다. 튜터가 힌트를 주면서 파일명을 밝히지 않아 혼동이 생겼다
+  (`steps/03-workloads/TUTOR-NOTES.md` 에 기록).
+
+**알게 된 것 — 없는 이미지로 갱신해도 서비스가 죽지 않는 이유**
+
+`replicas: 3`, `maxUnavailable: 1`, `maxSurge: 1` 이면 지켜야 할 경계선이 둘이다.
+
+- 준비된 Pod 최소 **2개** (3 - 1)
+- Pod 총수 최대 **4개** (3 + 1)
+
+v99 로 갱신했더니 정확히 그 경계선에서 멈췄다. 옛것 2개(준비됨) + 새것 2개(실패) = 4개.
+더 진행하려면 둘 중 하나를 어겨야 하므로 **갱신이 얼어붙은 채 옛 버전이 계속 서비스한다.**
+
+```
+demo-6cf4d5d8d9   2   <none>   v99   <- 2개를 요구하지만 준비된 것이 없다
+demo-bcb9d6678    2   2        v1    <- 3에서 2로 줄었을 뿐 0이 되지 않는다
+```
+
+**옛 ReplicaSet 을 0으로 내리는 일은 새 Pod 이 준비된 뒤에야 한다.** 이 순서가 안전장치
+자체다. `maxUnavailable` 이 3이었다면 옛것을 한꺼번에 지운 뒤 새것을 띄우려 했을 것이고,
+그 순간 서비스가 완전히 끊겼을 것이다.
+
+실패한 Pod 에도 IP 가 붙어 있었다(`10.244.2.5`). pause 컨테이너는 이미 떠서 네트워크
+이름공간을 열었고 **앱 컨테이너만 못 뜬 것**이다. 재시도 간격도 12초에서 시작해 5분 상한에
+도달했다(02단계의 백오프와 같은 값).
+
+**알게 된 것 — `rollout undo` 는 `last-applied-configuration` 을 갱신하지 않는다**
+
+`undo` 를 하면 경고가 나온다. `kubectl apply` 는 적용할 때마다 **그 파일의 내용을 통째로**
+이 주석에 저장해 두고, 다음 `apply` 때 세 가지를 비교한다.
+
+| 비교 대상 | 뜻 |
+|---|---|
+| 주석에 저장된 옛 파일 | 지난번에 뭐라고 적었나 |
+| 지금 적용하는 파일 | 이번에 뭐라고 적나 |
+| 클러스터의 실제 상태 | 지금 실제로 어떤가 |
+
+이 셋을 맞춰 봐야 **"내가 이번에 지운 필드"**를 알 수 있다. 그런데 주석은 "클러스터가 지금
+어떤가"가 아니라 "내가 마지막으로 무엇을 적용했는가"만 기록한다. `undo`·`set image`·`scale`
+처럼 `apply` 를 거치지 않고 상태를 바꾸면 둘이 어긋나고, 다음 `apply` 의 계산이 틀린 전제
+위에서 이루어진다.
+
+**실무의 올바른 되돌리기는 매니페스트를 옛 내용으로 고쳐서 다시 `apply` 하는 것이다.**
+`rollout undo` 는 파일을 찾을 시간이 없는 급한 상황을 위한 수단이다. 12단계 GitOps 는 사람이
+클러스터를 직접 바꾸는 통로를 막아서 이 문제를 없앤다.
+
+**알게 된 것 — REVISION 번호는 재사용된다**
+
+`undo` 뒤에 이력을 보니 REVISION 1이 사라지고 2, 3만 남았다. v1 로 돌아오면서 그것이
+**3번으로 새 번호를 받은 것**이다. 개정 번호는 일련번호일 뿐 특정 버전을 가리키는 고정된
+이름이 아니다. "3번으로 돌려 달라"고 나중에 말하면 그때 3번이 무엇일지 알 수 없다.
+
+DMS 가 Deployment 이름에 버전 문자열을 박아 넣은 이유가 여기 있다
+(`admintool-v1-0-2601-0900`). 그 이름은 바뀌지 않는다.
+
+**알게 된 것 — 되살릴 수 있는 것은 정의이지 인스턴스가 아니다**
+
+`undo` 로 v1 로 돌아왔을 때 가운데 해시는 `bcb9d6678` 로 복귀했지만 뒤 5자는 전부 새것이었고
+`AGE` 도 79초였다. **옛 Pod 이 되살아난 것이 아니라, 옛 ReplicaSet 이 다시 3개를 요구해서
+새로 만든 것이다.**
+
+**실무와 다른 점 — DMS 는 롤링 업데이트를 쓰지 않는다**
+
+| | 03단계에서 배운 것 | DMS |
+|---|---|---|
+| 갱신 방법 | `set image` 로 같은 Deployment 를 갱신 | 버전마다 별개의 Deployment 를 만든다 |
+| 되돌리기 | `rollout undo` | 옛 버전 Deployment 를 다시 올린다 |
+| 옛 버전이 남는 곳 | Deployment 안의 옛 ReplicaSet | 별개의 Deployment 오브젝트 |
+
+블루/그린 배포에 가깝다. 서비스 시작·중지 순서가 정해져 있고(로그 관리자 먼저, 트리거
+마지막) 큐가 비워질 때까지 기다려야 하는 성격이라, 한 개씩 교대하는 방식으로는 다루기
+어려웠을 것이다.
+
+**이 단계에서 문서에 반영한 것**
+
+- `CLAUDE.md` 실행 환경에 6번 추가: 디스크가 HDD 라서 컨트롤 플레인이 계속 재시작한다는
+  사실과 진단 명령. 08·09단계에서 학습자가 낸 고장과 구분하기 위해서다.
+- `PROGRESS.md` 환경 기록에 "디스크가 HDD 다" 절 추가.
+- `steps/02-pod/TUTOR-NOTES.md` 3번에 덧붙임: `--sort-by=.lastTimestamp` 정렬 함정.
+- `steps/03-workloads/TUTOR-NOTES.md` 신설: `maxUnavailable` 힌트를 줄 때 파일명과 값을
+  함께 밝힐 것, 환경이 느리다는 이유로 실습을 미리 잘라내지 말 것.
+
+**알게 된 것 — `maxUnavailable: 0` 은 교대 순서를 뒤집는다 (실습 8)**
+
+`demo-strict`(`maxUnavailable: 0`, `maxSurge: 1`)를 v2 로 갱신하니 세 번 모두 같은
+순서였다.
+
+```
+d88pw   1/1  Running       3s      <- 새것이 준비되고
+d9ml8   1/1  Terminating   110s    <- 그 다음에 옛것이 지워진다
+```
+
+실습 9의 `demo`(`maxUnavailable: 1`)는 정반대였다. 새 Pod 이 `ImagePullBackOff` 인
+상태에서도 옛 Pod 하나를 먼저 `Terminating` 시켰다.
+
+| | `demo` (`maxUnavailable: 1`) | `demo-strict` (`maxUnavailable: 0`) |
+|---|---|---|
+| 준비된 Pod 최소 | 2개 | **3개** (줄어들 수 없다) |
+| Pod 총수 최대 | 4개 | 4개 |
+| 교대 방식 | 제거와 생성이 겹칠 수 있다 | 새것이 준비된 뒤에만 제거한다 |
+
+**대가는 자원과 시간이다.** 갱신 중 Pod 이 `replicas + 1` 개까지 존재하므로 여유 자원이
+필요하고, 교대가 엄격히 직렬이라 앱 기동이 느릴수록 전체 갱신 시간이 길어진다.
+가용성을 자원·시간과 맞바꾸는 것이다.
+
+**알게 된 것 — `Terminating` 은 세지 않으므로 실제로는 5개가 공존했다**
+
+`maxSurge: 1` 이 제한하는 것은 **ReplicaSet 이 자기 몫으로 세는 Pod 수**이고, 삭제 표시가
+붙은 Pod 은 거기서 빠진다(실습 4에서 본 것과 같은 원리). 그래서 물리적으로는 상한을 넘는
+순간이 있다. 로그의 `AGE` 로 113초 시점을 재구성하면 이렇다.
+
+| Pod | 상태 |
+|---|---|
+| `d9ml8` | Terminating (110초 시작, 116초에 사라짐) |
+| `g8sc5` | Terminating (막 시작) |
+| `wl2d7`, `d88pw`, `l79f8` | Running |
+
+**다섯 개다.** 종료가 6초나 걸린 이유는 이 앱의 `SHUTDOWN_DELAY` 기본값이 5초여서,
+SIGTERM 을 받고도 5초를 기다린 뒤에 종료하기 때문이다(`app/main.go:24`).
+
+실무 함의가 있다. 자원을 계산할 때 `replicas + maxSurge` 만 보면 모자랄 수 있다. **종료
+중인 Pod 도 노드의 CPU 와 메모리를 그대로 쓰고 있다.** 종료가 느린 앱일수록 겹치는 구간이
+길어진다.
+
+**알게 된 것 — `maxUnavailable: 0` 만으로는 무중단이 가짜다 (08단계로 이어짐)**
+
+이것이 실습 8의 가장 중요한 발견이다.
+
+```
+demo-strict-69c78b89f6-d88pw   0/1   ContainerCreating   2s
+demo-strict-69c78b89f6-d88pw   1/1   Running             3s   <- 3초 만에 "준비됨"
+```
+
+이 앱은 `READY_AFTER=5` 라서 **5초가 지나야 스스로 준비된다.** 그런데 쿠버네티스는 3초
+만에 `1/1` 로 판정했고 곧바로 옛 Pod 을 지웠다. `readinessProbe` 가 없어서 **앱에게 묻지
+않고 컨테이너 프로세스가 떴다는 것만으로** 판단했기 때문이다.
+
+**`maxUnavailable: 0` 이 보장하는 것은 "준비되었다고 판단된 Pod 의 수"일 뿐이고, 그 판단이
+실제와 맞는지는 별개의 문제다.** 판단을 실제와 맞추는 장치가 `readinessProbe` 이며,
+전략과 프로브가 둘 다 있어야 진짜 무중단이 된다. 08단계에서 붙인다.
+
+`02-deployment-strategy.yaml` 이 `READY_AFTER=5` 를 넣어 두고 프로브는 일부러 빼 둔 것이
+이 간극을 실제로 만들어 보여 주기 위한 장치였다.
+
+**튜터의 오판 — 환경이 느리다는 이유로 실습을 미리 잘라냈다**
+
+튜터가 "실습 8은 컨트롤 플레인이 불안정해서 교대 과정을 관찰하기 어렵다"고 판단해
+건너뛰자고 했다. 학습자가 확인 질문 3번을 직접 확인하고 싶다고 해서 진행했더니 **관찰이
+아주 잘 되었다.** 새 Pod 이 3~4초 만에 떴고 교대 순서가 선명했으며, 오히려 실습 9보다
+빨랐다.
+
+교훈은 두 가지다. 환경이 느리다는 이유로 실습을 미리 잘라내지 말 것. 그리고 이 환경의
+지연은 **일정하지 않다**는 것. 스케줄러가 살아 있는 구간에 걸리면 정상 속도로 진행된다.
 
 ---
 

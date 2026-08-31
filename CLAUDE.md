@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 저장소 경로 (WSL) | `/mnt/d/workspace/prj/oss/mine/learn-k8s` |
 | 쿠버네티스 도구 위치 | WSL의 `/usr/local/bin` |
 
-### 반드시 지켜야 할 세 가지
+### 반드시 지켜야 할 것들
 
 1. **`kubectl`·`kind`·`helm`은 WSL 셸 안에서만 실행합니다.** Windows PATH에는 제거된
    Docker Desktop의 잔재인 `C:\Program Files\Docker\Docker\resources\bin\kubectl`이 남아
@@ -58,6 +58,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    셸 통합 훅(`__it_shellinteg_prompt`)이 밀려나고, **셸은 살아 있는데 터미널이 프롬프트를
    그리지 않는** 상태가 됩니다(2026-08-21 실제 발생). 셸 설정을 고친 뒤에는 **새 터미널을
    열도록** 안내하십시오. 그 상태에 빠졌으면 창을 닫거나 `exec bash -l` 로 벗어납니다.
+
+6. **디스크가 HDD 라서 컨트롤 플레인이 계속 재시작합니다.** WSL 배포판이
+   `D:\workspace\wsl\Ubuntu24\ext4.vhdx` 에 있고, D: 드라이브는 회전 디스크
+   (Seagate ST2000DM008)입니다. `fsync` 한 번에 **246ms** 가 걸립니다(정상 SSD 는
+   0.1~1ms, etcd 권장 기준은 p99 10ms). etcd 는 모든 쓰기에 `fsync` 를 요구하므로
+   API 서버의 응답이 5초를 넘고, `kube-scheduler` 와 `kube-controller-manager` 가
+   리더 임차(lease)를 갱신하지 못해 **스스로 종료합니다.** 2026-08-28 확인 시점에
+   재시작 횟수가 각각 179회·173회였습니다.
+
+   **증상:** Pod 이 `Pending` 에 수십 초에서 수 분 동안 머물고 `NODE` 가 `<none>`
+   입니다. `FailedScheduling` 이벤트는 **나오지 않습니다.** 스케줄러가 자리를 못 찾은
+   것이 아니라 아무도 찾고 있지 않기 때문입니다. 스케줄러가 되살아나는 순간에
+   배정되므로 실습 자체는 진행됩니다.
+
+   **이것을 실습 실패로 설명하지 마십시오.** 특히 08단계 헬스체크와 09단계 장애
+   진단에서, 학습자가 의도적으로 낸 고장과 이 환경 문제를 반드시 구분해 주십시오.
+
+   ```bash
+   kubectl get pods -n kube-system | grep -E 'scheduler|controller-manager'
+   kubectl logs -n kube-system kube-scheduler-learn-control-plane --previous --tail=5
+   # -> "Failed to renew lease ... context deadline exceeded" / "Leaderelection lost"
+
+   dd if=/dev/zero of=/tmp/probe bs=4k count=500 oflag=dsync; rm -f /tmp/probe
+   # -> 16.6 kB/s 수준이면 이 문제입니다 (순차 쓰기는 534 MB/s 로 멀쩡하게 나옵니다)
+   ```
+
+   근본 해결은 WSL 배포판을 SSD 로 옮기는 것입니다. 2026-08-28 현재 학습자가 이 사실을
+   알고 **그대로 진행하기로 결정**했으므로, 매번 다시 제안하지 마십시오.
 
 ## 자주 쓰는 명령
 
